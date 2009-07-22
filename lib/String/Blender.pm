@@ -1,27 +1,24 @@
+#$Id: Blender.pm,v 0.04 2009/07/22 12:42:18 askorikov Exp $
+
 package String::Blender;
 
 use 5.008;
 use warnings;
 use strict;
-use version; our $VERSION = '0.02';
+use version; our $VERSION = '0.04';
 
 use Carp;
 use Moose 0.74;
 use Moose::Util::TypeConstraints;
 
-
 subtype 'VocabStr'
     => as 'Str'
-    => where   { $_ =~ m/^[^\s\n[:cntrl:]]+$/ }
-    => message {
-        "Invalid vocab element ($_) found. Valid vocabulary string should not ".
-        "contain whitespaces, newlines and control characters"
-    };
+    => where   { length && $_ !~ /[\n[:cntrl:]]+/msx };
 
 subtype 'Natural'
     => as 'Int'
     => where   { $_ > 0 }
-    => message { "This number ($_) is not positive" };
+    => message { "this number ($_) is not positive" };
 
 has 'vocabs' => (
     is => 'rw',
@@ -32,7 +29,7 @@ has 'vocab_files' => (
     is => 'rw',
     isa => 'ArrayRef',
     default => undef,
-    trigger => \&_load_vocabs,
+    trigger => \&load_vocabs,
     predicate => 'has_vocab_files',
 );
 has 'quantity'         => (is => 'rw', isa => 'Natural', default => 10);
@@ -42,24 +39,30 @@ has 'max_length'       => (is => 'rw', isa => 'Natural', default => 20);
 has 'min_elements'     => (is => 'rw', isa => 'Natural', default => 2);
 has 'max_elements'     => (is => 'rw', isa => 'Natural', default => 5);
 has 'strict_order'     => (is => 'rw', isa => 'Bool',    default => 0);
-has 'delimiter'        => (is => 'rw', isa => 'Str',     default => '');
-has 'prefix'           => (is => 'rw', isa => 'Str',     default => '');
-has 'postfix'          => (is => 'rw', isa => 'Str',     default => '');
+has 'delimiter'        => (is => 'rw', isa => 'Str',     default => q{});
+has 'prefix'           => (is => 'rw', isa => 'Str',     default => q{});
+has 'postfix'          => (is => 'rw', isa => 'Str',     default => q{});
 
 sub BUILD
 {
     my $self = shift;
     $self->has_vocabs || $self->_load_vocabs;
+    return 1;
 }
 
 sub _read_lists
 {
+    my @filenames = @_;
     my @list = ();
-    for my $file_name (@_) {
+    my $line;
+    for my $file_name (@filenames) {
         open my $fh_lst, '<', $file_name
             or confess qq(Could not open file "$file_name");
-        push(@list, grep(s/^\s*(.+)\s*$/$1/, <$fh_lst>));
-        close($fh_lst);
+        while ($line = <$fh_lst>) {
+            $line =~ s/\n+$//msx;
+            push @list, $line
+        }
+        close $fh_lst or confess qq(Could not close file "$file_name");
     }
     return \@list;
 }
@@ -70,15 +73,16 @@ sub load_vocabs
     my @vocabs = ();
 
     ( $self->has_vocab_files && @{ $self->vocab_files } )
-        or confess qq(There are no vocabulary files specified);
+        or confess 'There are no vocabulary files specified';
 
     for my $elem ( @{ $self->vocab_files } ) {
-        my $list = ("ARRAY" eq ref($elem)) ?
-            _read_lists(@$elem) : _read_lists($elem);
-        push(@vocabs, $list);
+        my $list = ('ARRAY' eq ref $elem) ?
+            _read_lists(@{ $elem }) : _read_lists($elem);
+        push @vocabs, $list;
     }
 
     $self->vocabs(\@vocabs);
+    return scalar @vocabs;
 }
 
 sub blend
@@ -86,10 +90,10 @@ sub blend
     my ($self, $quantity) = @_;
     $quantity ||= $self->quantity;
     my @result = ();
-    my $vocabs_top = scalar( @{ $self->vocabs } ) - 1;
+    my $vocabs_top = $#{ $self->vocabs };
     my $numelems_range = $self->max_elements - $self->min_elements;
-    my $permalen = length($self->prefix) + length($self->postfix);
-    my $delimiterlen = length($self->delimiter);
+    my $permalen = length $self->prefix; $permalen += length $self->postfix;
+    my $delimiterlen = length $self->delimiter;
     my $max_tries = $quantity * $self->max_tries_factor;
     my $tries = 0;
 
@@ -97,37 +101,37 @@ sub blend
     for (1..$quantity) {
         $tries++;
         if ($max_tries < $tries) {
-            carp qq(Maximum tries limit exceeded \($max_tries\));
+            carp "Maximum tries limit exceeded ($max_tries)";
             last MULTIPLE;
         }
 
         my @match = ();
-        my $match_top = int(rand($numelems_range)) + $self->min_elements - 1;
+        my $match_top = $self->min_elements - 1 + int rand $numelems_range;
         my $length = $permalen + $delimiterlen * $match_top;
 
         MATCH:
         for my $i (0..$match_top) {
-            srand();
+            srand;
 
             my $vocab = $self->vocabs->[
-                ($i <= $vocabs_top) ? $i : int(rand($vocabs_top))
+                ($i <= $vocabs_top) ? $i : int rand $vocabs_top
             ];
-            my $element  = $vocab->[ int(rand($#$vocab)) ];
+            my $element = @{ $vocab }[ int rand $#{ $vocab } ];
 
-            my $new_length = $length + length($element);
+            my $new_length = $length + length $element;
             redo MULTIPLE if $new_length > $self->max_length;
             $length = $new_length;
 
-            int($self->strict_order) || int(rand()) ?
-                push(@match, $element) : unshift(@match, $element);
+            int $self->strict_order || int rand() ?
+                push @match, $element : unshift @match, $element;
         }
 
         redo MULTIPLE if ($length < $self->min_length);
-        my $complete_string =
-            $self->prefix . join($self->delimiter, @match) . $self->postfix;
+        my $complete_string = join $self->delimiter, @match;
+        $complete_string = $self->prefix . $complete_string . $self->postfix;
 
-        redo MULTIPLE if grep($_ eq $complete_string, @result);
-        push(@result, $complete_string);
+        redo MULTIPLE if scalar grep {$_ eq $complete_string} @result;
+        push @result, $complete_string;
     }
 
     return @result;
@@ -145,7 +149,7 @@ String::Blender - flexible vocabulary-based generator of compound words (e.g. do
 
 =head1 VERSION
 
-This document describes String::Blender version 0.02
+This document describes String::Blender version 0.04
 
 =head1 SYNOPSIS
 
@@ -153,16 +157,16 @@ This document describes String::Blender version 0.02
     
     my $blender = String::Blender->new(
         vocab_files => [
-            "./vocab/hacker-jargon.txt",  # load into vocab #0
+            './vocab/hacker-jargon.txt',  # load into vocab #0
             [
-                "./vocab/places.txt",     # load both files
-                "./vocab/boosters.txt",   # into vocab #1
+                './vocab/places.txt',     # load both files
+                './vocab/boosters.txt',   # into vocab #1
             ]
         ],
         quantity => 10,
         max_length => 20,
         max_elements => 3,
-        postfix => ".com",
+        postfix => '.com',
     );
     
     my @result = $blender->blend;
@@ -242,7 +246,7 @@ or too short.
 =back
 
 
-=head1 INTERFACE
+=head1 SUBROUTINES/METHODS
 
 =head2 Class methods
 
@@ -270,9 +274,9 @@ the object attribute with the same name will be used.
 
 =item * B<load_vocabs>
 
-Loads vocabulary lists from plain text files consisting of word per line and
+Loads vocabulary lists from plain text files collecting one element per line and
 stores the L</vocabs> attribute. Takes lists of files from the L</vocab_files>
-attribute. Returns number of vocabularies loaded. Note that this method invokes
+attribute. Returns number of vocabularies loaded. Note that  this method invokes
 automatically after object creation if L</vocabs> is empty and after each setting
 of the L</vocab_files> attribute, so you will not have to call it manually.
 
@@ -287,7 +291,7 @@ through the L</vocabs> attribute.
 =back
 
 
-=head1 ATTRIBUTES
+=head1 CONFIGURATION AND ENVIRONMENT
 
 The following list gives a short summary of each C<String::Blender> object
 attribute. All of them can be defined on object creation (see L</new>)
@@ -305,15 +309,15 @@ or set separately like follows.
 
 Contains reference to an array of vocabularies. Each vocabulary is represented
 by a reference to an array of strings, one per element. Any of those strings
-should not contain whitespaces, newlines and control characters. Being left
-undefined on object creation, this attribute will be set by the L</load_vocabs>
-method automatically. In this case you are supposed to have the L</vocab_files>
-attribute set properly.
+should not be empty and should not contain newlines and control characters.
+Being left undefined on object creation, this attribute will be set by the
+L</load_vocabs> method automatically. In this case you are supposed to have the
+L</vocab_files> attribute set properly.
 
 =item * B<vocab_files>
 
 Defines filenames and lists of filenames to read vocabularies from. Contains
-reference to an array of filenames, references to arrays of filenames or both.
+reference to an array of filenames and/or references to arrays of filenames.
 The L</load_vocabs> method will merge vocabularies loaded from united filenames
 into a single vocabulary. After object creation this method will be invoked every
 time the L</vocab_files> attribute is set. Each vocabulary file should consist
@@ -399,27 +403,27 @@ L</max_elements>, L</min_length>, L</max_length>.
 The C<load_vocabs> method will die once the L</vocab_files> attribute is not
 defined or refers to an empty list.
 
-=item C<< Could not open file %s >>
+=item C<< Could not open (close) file %s >>
 
 L</load_vocabs> will also die being unable to open any file specified in the
 L</vocab_files> attribute.
 
-=item C<< Invalid vocab element (%s) found. Valid vocabulary string should not
-contain whitespaces and control characters >>
+=item C<< Attribute (%s) does not pass the type constraint because: %s >>
 
-Rises while setting the vocabs directly or via the L</load_vocabs> method once
-wrong string detected.
+Assigning any object attribute to a value which does not match the attribute's
+type constraints will cause relevant fatal error.
 
 =back
-
-Setting of any object attribute to a value which does not match the attribute's
-type constrains will cause fatal error.
 
 
 =head1 DEPENDENCIES
 
 C<String::Blender> depends on the L<Moose> object system (version 0.74 or newer)
 which must be installed separately.
+
+=head1 INCOMPATIBILITIES
+
+None reported.
 
 
 =head1 BUGS AND LIMITATIONS
@@ -437,7 +441,7 @@ L<http://rt.cpan.org>.
 Alexey Skorikov  C<< <alexey@skorikov.name> >>
 
 
-=head1 LICENCE AND COPYRIGHT
+=head1 LICENSE AND COPYRIGHT
 
 Copyright (c) 2009, Alexey Skorikov C<< <alexey@skorikov.name> >>. All rights reserved.
 

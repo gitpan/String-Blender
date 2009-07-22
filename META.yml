@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               String-Blender
-version:            0.02
+version:            0.04
 abstract:           flexible vocabulary-based generator of compound words (e.g. domain names).
 author:
     - Alexey Skorikov <alexey@skorikov.name>

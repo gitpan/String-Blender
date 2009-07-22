@@ -1,4 +1,4 @@
-String-Blender version 0.02
+String-Blender version 0.04
 
 String::Blender is an OO implementation of random generator of compound
 words based on one or more priority driven word vocabularies. Originally the

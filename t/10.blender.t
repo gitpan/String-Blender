@@ -4,11 +4,11 @@ use strict;
 use warnings;
 use utf8;
 
-use Test::More tests => 7;
+use Test::More tests => 8;
 
 use String::Blender;
 
-can_ok("String::Blender", 'new');
+can_ok('String::Blender', 'new');
 
 my $blender = String::Blender->new(
     vocabs => [
@@ -26,20 +26,31 @@ isa_ok($blender, 'String::Blender');
 can_ok($blender, 'blend');
 can_ok($blender, 'load_vocabs');
 
-my $vocabs = [
-    [qw/web net host site list archive core base switch/],
-    [qw/candy honey muffin sugar sweet yammy/],
-    [qw/area city club dominion empire field land valley world/],
-];
+$blender->quantity(2000);
 
-ok($blender->vocabs($vocabs), "setting vocabs");
+ok(2000 == $blender->quantity, 'setting quantity');
 
-$blender->quantity(2500);
+ok(
+    $blender->vocab_files( [
+        't/blender/voc1.txt',
+        [ 't/blender/voc2.txt', 't/blender/voc3.txt', ],
+        't/blender/voc4.txt',
+    ] ),
+   'loading vocabs from files'
+);
 
-ok(2500 == $blender->quantity, "setting quantity");
-diag "Blender quantity = " . $blender->quantity;
+is_deeply(
+    $blender->vocabs,
+    [
+        [qw/web net host site list archive core base switch/],
+        [qw/area city club dominion empire field land valley world
+            hood region spot location district/],
+        [qw/candy honey muffin sugar sweet yammy/],
+    ],
+    'adequate vocabs loaded'
+);
 
 my $r_quantity = scalar($blender->blend);
 
-ok(2500 == $r_quantity, "sufficient blend() result");
+ok(2000 == $r_quantity, 'sufficient blend() result');
 diag "Resulting quantity = $r_quantity";

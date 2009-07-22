@@ -6,7 +6,10 @@ README
 lib/String/Blender.pm
 t/00.load.t
 t/10.blender.t
-t/perlcritic.t
 t/pod-coverage.t
 t/pod.t
+t/blender/voc1.txt
+t/blender/voc2.txt
+t/blender/voc3.txt
+t/blender/voc4.txt
 META.yml                                 Module meta-data (added by MakeMaker)
